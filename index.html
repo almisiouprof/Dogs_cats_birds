@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="el">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Teachable Machine - Demo</title>
+  <style>
+    body { font-family: Arial, sans-serif; display:flex; flex-direction:column; align-items:center; padding:16px; }
+    #video-container { position: relative; width: 320px; max-width: 90vw; }
+    video { width: 100%; height: auto; border-radius: 8px; background:#000; }
+    #label { margin-top:10px; font-size:1.1rem; font-weight:600; }
+    #confidence { color: #333; margin-top:4px; }
+    #status { margin-top:8px; color:#666; font-size:0.9rem; }
+    #controls { margin-top:12px; }
+    button { padding:8px 12px; border-radius:6px; border:1px solid #ccc; background:#f5f5f5; cursor:pointer; }
+  </style>
+</head>
+<body>
+  <h2>Teachable Machine — Live Demo</h2>
+
+  <div id="video-container">
+    <video id="webcam" autoplay playsinline></video>
+  </div>
+
+  <div id="label">Label: <span id="label-text">---</span></div>
+  <div id="confidence">Confidence: <span id="conf-text">---</span></div>
+  <div id="status">Status: <span id="status-text">loading...</span></div>
+
+  <div id="controls">
+    <button id="start-btn">Start Camera & Predict</button>
+    <button id="stop-btn" disabled>Stop</button>
+  </div>
+
+  <!-- Teachable Machine Image library (CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
+
+  <script>
+    // ---- ΑΛΛΑΞΕ ΑΥΤΗ ΤΗΝ ΔΙΕΥΘΥΝΣΗ ΣΤΟ URL ΤΟΥ model.json ΣΟΥ ----
+    // Παράδειγμα: "https://almisiouprof.github.io/Dogs_cats_birds/model.json"
+    const MODEL_URL = "https://almisiouprof.github.io/Dogs_cats_birds/model.json";
+    // ---------------------------------------------------------
+
+    const webcamElement = document.getElementById('webcam');
+    const startBtn = document.getElementById('start-btn');
+    const stopBtn = document.getElementById('stop-btn');
+    const labelText = document.getElementById('label-text');
+    const confText = document.getElementById('conf-text');
+    const statusText = document.getElementById('status-text');
+
+    let model, webcam, maxPredictions;
+    let isRunning = false;
+
+    async function initModel() {
+      statusText.innerText = 'Φόρτωση μοντέλου...';
+      try {
+        // Το teachablemachine-image library περιμένει URL προς folder που περιέχει model.json
+        // Αν MODEL_URL είναι ".../model.json" τότε περνάμε το base path:
+        const baseURL = MODEL_URL.replace(/\/model\.json$/, "/");
+        model = await tmImage.load(baseURL + "model.json", baseURL + "metadata.json");
+        maxPredictions = model.getTotalClasses();
+        statusText.innerText = 'Μοντέλο φορτώθηκε.';
+      } catch (e) {
+        console.error(e);
+        statusText.innerText = 'Σφάλμα φόρτωσης μοντέλου. Έλεγξε το URL.';
+        throw e;
+      }
+    }
+
+    async function startWebcamAndPredict() {
+      // Ζητάμε πρόσβαση στην κάμερα
+      try {
+        webcam = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+        webcamElement.srcObject = webcam;
+        await webcamElement.play();
+      } catch (e) {
+        statusText.innerText = 'Δεν επιτρέπεται πρόσβαση στην κάμερα ή δεν υπάρχει συσκευή.';
+        console.error(e);
+        return;
+      }
+
+      isRunning = true;
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+      statusText.innerText = 'Τρέχει πρόβλεψη...';
+
+      // loop πρόβλεψης
+      predictLoop();
+    }
+
+    async function predictLoop() {
+      if (!isRunning) return;
+      try {
+        const prediction = await model.predict(webcamElement);
+        // prediction είναι πίνακας με αντικείμενα {className, probability}
+        // Βρίσκουμε το μεγαλύτερο
+        prediction.sort((a,b) => b.probability - a.probability);
+        const top = prediction[0];
+        labelText.innerText = top.className;
+        confText.innerText = (top.probability * 100).toFixed(1) + " %";
+      } catch (e) {
+        console.error("Predict error:", e);
+        statusText.innerText = "Σφάλμα κατά την πρόβλεψη.";
+      }
+      // περιμένουμε μικρό διάστημα (π.χ. 200ms) πριν την επόμενη πρόβλεψη
+      setTimeout(() => { if (isRunning) requestAnimationFrame(predictLoop); }, 200);
+    }
+
+    function stopWebcam() {
+      isRunning = false;
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      statusText.innerText = 'Σταμάτησε.';
+      if (webcamElement && webcamElement.srcObject) {
+        const tracks = webcamElement.srcObject.getTracks();
+        tracks.forEach(track => track.stop());
+        webcamElement.srcObject = null;
+      }
+    }
+
+    // Event listeners
+    startBtn.addEventListener('click', async () => {
+      try {
+        if (!model) await initModel();
+        await startWebcamAndPredict();
+      } catch (e) {
+        console.error(e);
+      }
+    });
+
+    stopBtn.addEventListener('click', () => stopWebcam());
+
+    // Αυτόματα προσπαθούμε να φορτώσουμε το μοντέλο μόλις ανοίξει η σελίδα
+    (async () => {
+      try {
+        await initModel();
+        statusText.innerText = 'Έτοιμο — πάτησε "Start Camera & Predict".';
+      } catch (e) { /* ήδη χειρίστηκε */ }
+    })();
+  </script>
+</body>
+</html>
